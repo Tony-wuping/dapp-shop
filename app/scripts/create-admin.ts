@@ -27,8 +27,8 @@ async function main() {
   });
 
   console.log(` 管理员账号创建成功！`);
-  console.log(`用户名：${username='Tony'}`);
-  console.log(`密码：${password=}`);
+  console.log(`用户名：${username}`);
+  console.log(`密码：${password}`);
 }
 
 main()
