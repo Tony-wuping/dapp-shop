@@ -242,10 +242,10 @@ export default function AdminOrdersPage() {
         </button>
       </div>
 
-      {/* 错误 */}
+      {/* 错误提示 */}
       {error ? <div style={errorBoxStyle}>{error}</div> : null}
 
-      {/* 表格 */}
+      {/* 订单表格 */}
       <div style={tableWrapper}>
         <table style={tableStyle}>
           <thead style={{ background: "#182347" }}>
@@ -597,6 +597,7 @@ const searchInputStyle: React.CSSProperties = {
   background: "#0f172a",
   color: "#fff",
   outline: "none",
+  // 修正: 已删除此处错误拼写的 boxXsizing
 };
 
 const selectStyle: React.CSSProperties = {
@@ -746,7 +747,7 @@ const inputStyle: React.CSSProperties = {
   background: "#0f172a",
   color: "#fff",
   outline: "none",
-  boxXsizing: "border-box",
+  boxSizing: "border-box", // 修正: 已删除此处错误拼写的 boxXsizing
 };
 
 const textAreaStyle: React.CSSProperties = {
@@ -757,7 +758,7 @@ const textAreaStyle: React.CSSProperties = {
   background: "#0f172a",
   color: "#fff",
   outline: "none",
-  boxXsizing: "border-box",
+  boxSizing: "border-box", // 修正: 已删除此处错误拼写的 boxXsizing
   resize: "vertical",
 };
 
