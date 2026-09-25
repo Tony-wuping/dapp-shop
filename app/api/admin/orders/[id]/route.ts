@@ -1,85 +1,50 @@
-import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { NextResponse } from 'next/server';
+import { createConnection } from "mysql2/promise";
 
-function serializeOrder(order: any) {
-  return {
-    id: order.id.toString(),
-    orderNo: order.orderNo,
-    userId: order.userId.toString(),
-    walletAddress: order.walletAddress,
-    nickname: order.nickname,
-    productId: order.productId.toString(),
-    productName: order.productName,
-    productPrice: order.productPrice.toString(),
-    coinType: order.coinType,
-    chainType: order.chainType,
-    payAddress: order.payAddress,
-    orderStatus: order.orderStatus,
-    createdAt: order.createdAt ? order.createdAt.toISOString() : "",
-    paidAt: order.paidAt ? order.paidAt.toISOString() : "",
-    completedAt: order.completedAt ? order.completedAt.toISOString() : "",
-    timeoutAt: order.timeoutAt ? order.timeoutAt.toISOString() : "",
-    shippingInfo: order.shippingInfo || "",
-    remark: order.remark || "",
-  };
-}
+// 数据库连接配置 (建议改为环境变量，这里为了方便先保持)
+const dbConfig = {
+  host: process.env.DB_HOST || "localhost",
+  user: process.env.DB_USER || "root",
+  password: process.env.DB_PASSWORD,
+  database: process.env.DB_NAME || "dapp_mall",
+  port: Number(process.env.DB_PORT) || 3306,
+};
 
-export async function PATCH(
-  req: Request,
-  { params }: { params: { id: string } }
-) {
+// PATCH 请求：更新单个订单状态
+export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
+  // 核心修复：Next.js 15 必须 await 解包 params
+  const { id } = await params;
+  
+  let connection;
   try {
-    const id = BigInt(params.id);
-    const body = await req.json();
-
-    const updateData: any = {};
-
-    if (body.orderStatus !== undefined) {
-      updateData.orderStatus = String(body.orderStatus);
+    const payload = await req.json();
+    connection = await createConnection(dbConfig);
+    
+    // 构建动态 SQL
+    const updateFields: string[] = [];
+    const values: any[] = [];
+    
+    // 安全过滤并收集需要更新的字段
+    const allowedFields = ['orderStatus', 'paidAt', 'completedAt', 'remark', 'payAddress', 'chainType', 'shippingInfo'];
+    for (const key of allowedFields) {
+      if (payload[key] !== undefined) {
+        updateFields.push(`${key} = ?`);
+        values.push(payload[key]);
+      }
     }
 
-    if (body.shippingInfo !== undefined) {
-      updateData.shippingInfo = String(body.shippingInfo);
+    if (updateFields.length === 0) {
+      return NextResponse.json({ success: false, message: "没有提供有效的更新字段" }, { status: 400 });
     }
 
-    if (body.remark !== undefined) {
-      updateData.remark = String(body.remark);
-    }
-
-    if (body.payAddress !== undefined) {
-      updateData.payAddress = String(body.payAddress);
-    }
-
-    if (body.chainType !== undefined) {
-      updateData.chainType = String(body.chainType);
-    }
-
-    if (body.paidAt !== undefined) {
-      updateData.paidAt = body.paidAt ? new Date(body.paidAt) : null;
-    }
-
-    if (body.completedAt !== undefined) {
-      updateData.completedAt = body.completedAt ? new Date(body.completedAt) : null;
-    }
-
-    if (body.timeoutAt !== undefined) {
-      updateData.timeoutAt = body.timeoutAt ? new Date(body.timeoutAt) : null;
-    }
-
-    const updated = await prisma.order.update({
-      where: { id },
-      data: updateData,
-    });
-
-    return NextResponse.json({
-      success: true,
-      data: serializeOrder(updated),
-    });
-  } catch (error) {
-    console.error(error);
-    return NextResponse.json(
-      { success: false, message: "更新订单失败" },
-      { status: 500 }
-    );
+    values.push(id);
+    const sql = `UPDATE orders SET ${updateFields.join(', ')} WHERE id = ?`;
+    
+    await connection.execute(sql, values);
+    return NextResponse.json({ success: true });
+  } catch (error: any) {
+    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+  } finally {
+    if (connection) await connection.end();
   }
 }
