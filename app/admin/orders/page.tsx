@@ -446,6 +446,14 @@ function Modal({
   );
 }
 
+function FormGrid({ children }: { children: React.ReactNode }) {
+  return (
+    <div style={formGridStyle}>
+      {children}
+    </div>
+  );
+}
+
 function Field({
   label,
   value,
@@ -738,7 +746,7 @@ const inputStyle: React.CSSProperties = {
   background: "#0f172a",
   color: "#fff",
   outline: "none",
-  boxSizing: "border-box",
+  boxXsizing: "border-box",
 };
 
 const textAreaStyle: React.CSSProperties = {
@@ -749,7 +757,7 @@ const textAreaStyle: React.CSSProperties = {
   background: "#0f172a",
   color: "#fff",
   outline: "none",
-  boxSizing: "border-box",
+  boxXsizing: "border-box",
   resize: "vertical",
 };
 
