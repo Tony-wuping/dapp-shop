@@ -5,7 +5,8 @@ import { useEffect, useState } from "react";
 
 type OrderItem = {
   id: string;
-  name: string;
+  userId: string;
+  productName: string;
   price: string;
   status: string;
   time: string;
@@ -13,10 +14,24 @@ type OrderItem = {
 
 export default function OrdersPage() {
   const [orders, setOrders] = useState<OrderItem[]>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const saved = JSON.parse(localStorage.getItem("orders") || "[]");
-    setOrders(saved);
+    const loadOrders = async () => {
+      try {
+        const res = await fetch("/api/orders");
+        const data = await res.json();
+        if (data.success) {
+          setOrders(data.data || []);
+        }
+      } catch (error) {
+        console.error("获取订单失败", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadOrders();
   }, []);
 
   return (
@@ -27,6 +42,7 @@ export default function OrdersPage() {
             <h1 className="text-3xl font-bold text-cyan-400">我的订单</h1>
             <p className="mt-1 text-sm text-white/60">查看你最近的购买记录</p>
           </div>
+
           <Link
             href="/"
             className="rounded-xl bg-cyan-500 px-4 py-2 font-semibold text-black transition hover:bg-cyan-400"
@@ -35,21 +51,33 @@ export default function OrdersPage() {
           </Link>
         </div>
 
-        {orders.length === 0 ? (
+        {loading ? (
           <div className="rounded-2xl border border-white/10 bg-white/5 p-8 text-center text-white/60">
-            暂时还没有订单，去首页买点东西吧。
+            正在加载订单...
+          </div>
+        ) : orders.length === 0 ? (
+          <div className="rounded-2xl border border-white/10 bg-white/5 p-8 text-center text-white/60">
+            暂时还没有订单。
+            <div className="mt-4">
+              <Link
+                href="/"
+                className="inline-block rounded-xl bg-cyan-500 px-4 py-2 font-semibold text-black transition hover:bg-cyan-400"
+              >
+                去首页看看
+              </Link>
+            </div>
           </div>
         ) : (
           <div className="grid gap-4">
             {orders.map((order) => (
               <div
                 key={order.id}
-                className="rounded-2xl border border-white/10 bg-white/5 p-5"
+                className="rounded-2xl border border-white/10 bg-white/5 p-5 transition hover:border-cyan-500/40"
               >
                 <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                   <div>
                     <h2 className="text-lg font-semibold text-cyan-300">
-                      {order.name}
+                      {order.productName}
                     </h2>
                     <p className="mt-1 text-sm text-white/60">订单号：{order.id}</p>
                     <p className="mt-1 text-sm text-white/60">时间：{order.time}</p>
@@ -72,18 +100,17 @@ export default function OrdersPage() {
 
       <nav className="fixed bottom-0 left-0 right-0 border-t border-white/10 bg-slate-950/95 backdrop-blur-md">
         <div className="mx-auto flex max-w-6xl items-center justify-around px-4 py-3">
-          <Link href="/" className="text-sm text-white/70 hover:text-cyan-300">
+          <Link href="/" className="text-sm text-white/70 transition hover:text-cyan-300">
             首页
           </Link>
-          <Link href="/orders" className="text-sm text-cyan-300">
+
+          <Link href="/orders" className="text-sm font-semibold text-cyan-300">
             我的订单
           </Link>
-          <button
-            onClick={() => alert("这里后面可以放个人中心")}
-            className="text-sm text-white/70 hover:text-cyan-300"
-          >
+
+          <Link href="/profile" className="text-sm text-white/70 transition hover:text-cyan-300">
             个人中心
-          </button>
+          </Link>
         </div>
       </nav>
     </main>

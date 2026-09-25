@@ -1,0 +1,264 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            BigInt    @id @default(autoincrement())
+  walletAddress String    @unique @db.VarChar(128)
+  nickname      String    @default("") @db.VarChar(100)
+  email         String    @default("") @db.VarChar(100)
+  phone         String    @default("") @db.VarChar(30)
+  gender        String    @default("") @db.VarChar(20)
+  birthday      DateTime?
+  nationality   String    @default("") @db.VarChar(50)
+  province      String    @default("") @db.VarChar(50)
+  city          String    @default("") @db.VarChar(50)
+  addressDetail String    @default("") @db.VarChar(255)
+
+  referralCode String  @unique @db.VarChar(20)
+  inviterCode  String  @default("") @db.VarChar(20)
+  inviterId    BigInt?
+
+  level String @default("V1") @db.VarChar(10)
+  path  String @default("") @db.VarChar(500)
+
+  registerTime  DateTime  @default(now())
+  lastLoginTime DateTime?
+  status        Int       @default(1)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  inviter     User?              @relation("UserInviter", fields: [inviterId], references: [id])
+  invitees    User[]             @relation("UserInviter")
+  orders      Order[]
+  rewardLogs  RewardLog[]
+  inviterLogs InviterChangeLog[]
+
+  @@index([walletAddress])
+  @@index([referralCode])
+  @@index([inviterId])
+  @@map("users")
+}
+
+model ProductCategory {
+  id        BigInt @id @default(autoincrement())
+  name      String @db.VarChar(100)
+  sortOrder Int    @default(0)
+  status    Int    @default(1)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  products Product[]
+
+  @@map("product_categories")
+}
+
+model Product {
+  id            BigInt  @id @default(autoincrement())
+  categoryId    BigInt?
+  name          String  @db.VarChar(200)
+  intro         String  @default("") @db.VarChar(500)
+  detail        String? @db.LongText
+  price         Decimal @default(0) @db.Decimal(18, 2)
+  image         String  @default("") @db.VarChar(500)
+  stock         Int     @default(0)
+  status        Int     @default(1)
+  isRecommended Int     @default(0)
+  sortOrder     Int     @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  category ProductCategory? @relation(fields: [categoryId], references: [id])
+  orders   Order[]
+
+  @@index([categoryId])
+  @@index([status])
+  @@index([isRecommended])
+  @@map("products")
+}
+
+model Order {
+  id      BigInt @id @default(autoincrement())
+  orderNo String @unique @db.VarChar(64)
+
+  userId        BigInt
+  walletAddress String @db.VarChar(128)
+  nickname      String @default("") @db.VarChar(100)
+
+  productId    BigInt
+  productName  String  @db.VarChar(200)
+  productPrice Decimal @default(0) @db.Decimal(18, 2)
+
+  coinType   String @default("USDT") @db.VarChar(20)
+  chainType  String @db.VarChar(20)
+  payAddress String @db.VarChar(128)
+
+  orderStatus String @default("pending") @db.VarChar(20)
+
+  createdAt   DateTime  @default(now())
+  paidAt      DateTime?
+  completedAt DateTime?
+  timeoutAt   DateTime?
+
+  shippingInfo String? @db.LongText
+  remark       String  @default("") @db.VarChar(500)
+
+  user       User        @relation(fields: [userId], references: [id])
+  product    Product     @relation(fields: [productId], references: [id])
+  rewardLogs RewardLog[]
+
+  @@index([userId])
+  @@index([productId])
+  @@index([orderStatus])
+  @@index([createdAt])
+  @@map("orders")
+}
+
+model PaymentSetting {
+  id             BigInt @id @default(autoincrement())
+  coinType       String @default("USDT") @db.VarChar(20)
+  chainType      String @db.VarChar(20)
+  receiveAddress String @db.VarChar(128)
+  confirmCount   Int    @default(1)
+  timeoutMinutes Int    @default(10)
+  callbackUrl    String @default("") @db.VarChar(255)
+  status         Int    @default(1)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([coinType, chainType])
+  @@map("payment_settings")
+}
+
+model HomeConfig {
+  id                      BigInt  @id @default(autoincrement())
+  bannerJson              Json?
+  noticeContent           String? @db.LongText
+  recommendedProductsJson Json?
+  activityEntryJson       Json?
+  footerContent           String? @db.LongText
+
+  updatedAt DateTime @updatedAt
+
+  @@map("home_configs")
+}
+
+model SystemSetting {
+  id              BigInt  @id @default(autoincrement())
+  siteTitle       String  @default("") @db.VarChar(100)
+  siteLogo        String  @default("") @db.VarChar(500)
+  siteDesc        String? @db.LongText
+  email           String  @default("") @db.VarChar(100)
+  phone           String  @default("") @db.VarChar(30)
+  customerService String? @db.LongText
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("system_settings")
+}
+
+model RewardLevel {
+  id             BigInt  @id @default(autoincrement())
+  levelName      String  @unique @db.VarChar(10)
+  minSelfSpend   Decimal @default(0) @db.Decimal(18, 2)
+  minDirectCount Int     @default(0)
+  rebateRate     Decimal @default(0) @db.Decimal(10, 4)
+  status         Int     @default(1)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("reward_levels")
+}
+
+model RewardLog {
+  id            BigInt  @id @default(autoincrement())
+  userId        BigInt
+  sourceOrderId BigInt
+  rewardType    String  @default("") @db.VarChar(50)
+  rewardAmount  Decimal @default(0) @db.Decimal(18, 2)
+  status        Int     @default(1)
+
+  createdAt DateTime @default(now())
+
+  user  User  @relation(fields: [userId], references: [id])
+  order Order @relation(fields: [sourceOrderId], references: [id])
+
+  @@index([userId])
+  @@index([sourceOrderId])
+  @@map("reward_logs")
+}
+
+model RiskSetting {
+  id                         BigInt @id @default(autoincrement())
+  allowSameWalletRegister    Int    @default(0)
+  allowSameWalletOrder       Int    @default(0)
+  allowSelfReferral          Int    @default(0)
+  allowAdminChangeInviter    Int    @default(1)
+  limitSameIpRegister        Int    @default(1)
+  maxRegisterPerIpPerDay     Int    @default(3)
+  limitSameDeviceRegister    Int    @default(1)
+  maxRegisterPerDevicePerDay Int    @default(3)
+  maxPendingOrdersPerWallet  Int    @default(3)
+  autoFreezeRiskOrder        Int    @default(1)
+  autoFreezeRiskAccount      Int    @default(1)
+  manualReviewHighRiskOrder  Int    @default(1)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("risk_settings")
+}
+
+model RiskFreezeItem {
+  id        BigInt @id @default(autoincrement())
+  itemType  String @db.VarChar(20)
+  itemValue String @db.VarChar(255)
+  reason    String @default("") @db.VarChar(255)
+  status    String @default("冻结") @db.VarChar(20)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("risk_freeze_items")
+}
+
+model InviterChangeLog {
+  id             BigInt @id @default(autoincrement())
+  userId         BigInt
+  currentInviter String @default("") @db.VarChar(20)
+  newInviter     String @default("") @db.VarChar(20)
+  reason         String @default("") @db.VarChar(255)
+  status         String @default("待处理") @db.VarChar(20)
+  operator       String @default("") @db.VarChar(100)
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  processedAt DateTime?
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@map("inviter_change_logs")
+}
+
+model Admin {
+  id        BigInt   @id @default(autoincrement())
+  username  String   @unique @db.VarChar(50)
+  password  String   @db.VarChar(255)
+  role      String   @default("admin") @db.VarChar(20)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("admins")
+}
