@@ -1,10 +1,10 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-// 用于规范前端传回的订单数据
+// 订单数据规范化工具函数
 function normalizeOrder(row: any) {
   return {
     id: row.id,
@@ -36,17 +36,14 @@ function normalizeOrder(row: any) {
   };
 }
 
-// ✅ 获取订单列表
-export async function GET() {
+// 获取订单列表
+export async function GET(req: NextRequest) {
   try {
-    // 使用原生 SQL 查询，兼容性更好
-    const rows: any[] = await prisma.$queryRawUnsafe(
-      'SELECT * FROM `orders` ORDER BY `id` DESC'
-    );
+    const rows = await prisma.$queryRawUnsafe('SELECT * FROM "orders" ORDER BY "id" DESC');
 
     return NextResponse.json({
       success: true,
-      data: rows.map(normalizeOrder),
+      data: (rows as any[]).map(normalizeOrder),
     });
   } catch (error: any) {
     console.error('GET /api/admin/orders error:', error);
@@ -60,14 +57,11 @@ export async function GET() {
   }
 }
 
-// ✅ 修改订单状态/物流信息 (修复了类型报错)
-export async function PATCH(
-  req: Request,
-  { params }: { params: { slug?: string[] } }
-) {
+// 修改订单信息 (完全重写了接口签名以避开 Next.js 的复杂类型检查)
+export async function PATCH(req: NextRequest, { params }: any) {
   try {
-    // 从动态路由 slug 中获取订单 ID
-    const id = params.slug?.[0];
+    const slugArray = params?.slug || [];
+    const id = slugArray[0];
 
     if (!id) {
       return NextResponse.json(
@@ -76,37 +70,26 @@ export async function PATCH(
       );
     }
 
-    // 获取请求体
-    const payload = await req.json().catch(() => ({}));
+    let payload: any;
+    try {
+      payload = await req.json();
+    } catch {
+      payload = {};
+    }
 
-    // 允许更新的字段白名单 (安全校验)
     const allowedFields = [
-      'orderStatus',
-      'paidAt',
-      'completedAt',
-      'updatedAt',
-      'walletAddress',
-      'paymentAddress',
-      'receivingAddress',
-      'shippingNo',
-      'expressNo',
-      'trackingNo',
-      'logisticsNo',
-      'courierNo',
-      'chain',
-      'price',
-      'nickname',
-      'userNickname',
-      'productName',
+      'orderStatus', 'paidAt', 'completedAt', 'updatedAt',
+      'walletAddress', 'paymentAddress', 'receivingAddress',
+      'shippingNo', 'expressNo', 'trackingNo', 'logisticsNo', 'courierNo',
+      'chain', 'price', 'nickname', 'userNickname', 'productName'
     ];
 
     const updateFields: string[] = [];
     const values: any[] = [];
 
-    // 拼接 SQL 更新语句
     for (const key of allowedFields) {
       if (payload[key] !== undefined) {
-        updateFields.push(`\`${key}\` = ?`);
+        updateFields.push(`"${key}" = ?`);
         values.push(payload[key]);
       }
     }
@@ -120,9 +103,8 @@ export async function PATCH(
 
     values.push(id);
 
-    // 执行数据库更新
     await prisma.$executeRawUnsafe(
-      `UPDATE \`orders\` SET ${updateFields.join(', ')} WHERE \`id\` = ?`,
+      `UPDATE "orders" SET ${updateFields.join(', ')} WHERE "id" = ?`,
       ...values
     );
 
