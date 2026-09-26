@@ -39,7 +39,10 @@ function normalizeOrder(row: any) {
 // 获取订单列表
 export async function GET(req: NextRequest) {
   try {
-    const rows = await prisma.$queryRawUnsafe('SELECT * FROM "orders" ORDER BY "id" DESC');
+    // ✅ 已修复：使用反引号 (`) 包裹表名和字段名，完美适配 MySQL
+    const rows = await prisma.$queryRawUnsafe(
+      'SELECT * FROM `orders` ORDER BY `id` DESC'
+    );
 
     return NextResponse.json({
       success: true,
@@ -57,7 +60,7 @@ export async function GET(req: NextRequest) {
   }
 }
 
-// 修改订单信息 (完全重写了接口签名以避开 Next.js 的复杂类型检查)
+// 修改订单信息
 export async function PATCH(req: NextRequest, { params }: any) {
   try {
     const slugArray = params?.slug || [];
@@ -89,7 +92,7 @@ export async function PATCH(req: NextRequest, { params }: any) {
 
     for (const key of allowedFields) {
       if (payload[key] !== undefined) {
-        updateFields.push(`"${key}" = ?`);
+        updateFields.push(`\`${key}\` = ?`);
         values.push(payload[key]);
       }
     }
@@ -103,8 +106,9 @@ export async function PATCH(req: NextRequest, { params }: any) {
 
     values.push(id);
 
+    // ✅ 已修复：使用反引号 (`) 包裹表名和字段名，完美适配 MySQL
     await prisma.$executeRawUnsafe(
-      `UPDATE "orders" SET ${updateFields.join(', ')} WHERE "id" = ?`,
+      `UPDATE \`orders\` SET ${updateFields.join(', ')} WHERE \`id\` = ?`,
       ...values
     );
 
