@@ -112,7 +112,7 @@ export default function AdminLayout({
           color: #fff;
           font-size: 32px;
           padding: 12px;
-          margin: -12px; /* 扩大点击热区到 60px 左右，绝对好点 */
+          margin: -12px; 
           cursor: pointer;
           display: flex;
           align-items: center;
@@ -143,7 +143,7 @@ export default function AdminLayout({
         }
         .sidebar-inner {
           height: 100%;
-          overflow-y: auto; /* 关键修复：允许菜单内容溢出时独立滚动 */
+          overflow-y: auto; 
           padding: 24px 16px;
           scrollbar-width: thin;
           scrollbar-color: #1e293b #111833;
@@ -275,18 +275,30 @@ export default function AdminLayout({
           }
           .sidebar {
             transform: translateX(-100%);
-            width: 280px; /* 手机端菜单稍微加宽一点更好操作 */
+            width: 280px;
+            /* 【关键修复】让侧边栏从 Header 下方开始，避免被遮挡 */
+            top: 64px;
+            height: calc(100vh - 64px);
           }
           .sidebar.open {
             transform: translateX(0) !important;
           }
+          /* 【关键修复】确保内部滚动区域高度正确，且底部有安全距离 */
+          .sidebar-inner {
+            height: 100%;
+            padding-bottom: 40px !important;
+          }
           .main-content {
             margin-left: 0 !important;
             padding: 16px !important;
-            padding-top: 80px !important; /* 留出顶部导航栏空间 */
+            padding-top: 80px !important; 
           }
           .data-card-container {
             gap: 12px;
+          }
+          /* 遮罩层也需要避开 Header，或者覆盖全屏（这里选择覆盖全屏体验更好） */
+          .mobile-overlay {
+            top: 64px;
           }
         }
       `}</style>
