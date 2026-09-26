@@ -2,8 +2,19 @@
 
 import { useState, useEffect } from "react";
 
+// 1. 定义用户数据的接口类型
+interface User {
+  id: string;
+  nickname: string;
+  walletAddress: string;
+  email: string | null;
+  createdAt: string;
+  isBanned: boolean;
+}
+
 export default function UsersPage() {
-  const [users, setUsers] = useState([]);
+  // 2. 为 useState 添加泛型类型定义
+  const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
@@ -30,7 +41,7 @@ export default function UsersPage() {
   }, [page, search]);
 
   // 封禁/解封用户
-  const handleToggleBan = async (id, isBanned) => {
+  const handleToggleBan = async (id: string, isBanned: boolean) => {
     try {
       await fetch(`/api/admin/users/${id}`, {
         method: "PUT",
