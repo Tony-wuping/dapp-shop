@@ -1,71 +1,201 @@
-"use client";
+'use client';
 
-import { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from 'react';
+
+type OrderStatus = 'pending' | 'paid' | 'completed' | 'expired' | string;
 
 type OrderItem = {
-  id: string;
-  orderNo: string;
-  userId: string;
-  walletAddress: string;
-  nickname: string;
-  productId: string;
-  productName: string;
-  productPrice: string;
-  coinType: string;
-  chainType: string;
-  payAddress: string;
-  orderStatus: string;
-  createdAt: string;
-  paidAt: string;
-  completedAt: string;
-  timeoutAt: string;
-  shippingInfo: string;
-  remark: string;
+  id: string | number;
+  orderNo?: string;
+  orderNumber?: string;
+  walletAddress?: string;
+  nickname?: string;
+  userNickname?: string;
+  productName?: string;
+  productTitle?: string;
+  price?: number | string;
+  amount?: number | string;
+  chain?: string;
+  network?: string;
+  status?: OrderStatus;
+  orderStatus?: OrderStatus;
+  createdAt?: string;
+  paidAt?: string;
+  completedAt?: string;
+  receivingAddress?: string;
+  deliveryAddress?: string;
+  shippingAddress?: string;
+  address?: string;
+  shippingNo?: string;
+  expressNo?: string;
+  trackingNo?: string;
+  logisticsNo?: string;
+  courierNo?: string;
+  paymentAddress?: string;
+  txHash?: string;
+  hash?: string;
 };
 
-type EditForm = {
-  orderStatus: string;
-  shippingInfo: string;
-  remark: string;
-  payAddress: string;
-  chainType: string;
-};
+type ApiListResponse =
+  | {
+      success?: boolean;
+      data?: OrderItem[];
+      orders?: OrderItem[];
+      message?: string;
+      error?: string;
+    }
+  | OrderItem[];
+
+function safeString(v: unknown) {
+  if (v === null || v === undefined) return '';
+  return String(v);
+}
+
+function formatDate(value?: string) {
+  if (!value) return '-';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return value;
+  return d.toLocaleString('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  });
+}
+
+function formatMoney(value?: number | string) {
+  if (value === null || value === undefined || value === '') return '-';
+  const num = typeof value === 'number' ? value : Number(value);
+  if (Number.isNaN(num)) return String(value);
+  return num.toLocaleString('zh-CN', { maximumFractionDigits: 8 });
+}
+
+function normalizeStatus(raw?: string) {
+  const s = (raw || '').toLowerCase();
+  if (s.includes('pending') || s.includes('unpaid') || s.includes('待')) return 'pending';
+  if (s.includes('paid') || s.includes('已付')) return 'paid';
+  if (s.includes('completed') || s.includes('done') || s.includes('完成')) return 'completed';
+  if (s.includes('expired') || s.includes('timeout') || s.includes('超时')) return 'expired';
+  return raw || 'unknown';
+}
+
+function statusText(status?: string) {
+  switch (normalizeStatus(status)) {
+    case 'pending':
+      return '待支付';
+    case 'paid':
+      return '已支付';
+    case 'completed':
+      return '已完成';
+    case 'expired':
+      return '已超时';
+    default:
+      return status || '未知';
+  }
+}
+
+function statusClass(status?: string) {
+  switch (normalizeStatus(status)) {
+    case 'pending':
+      return 'bg-amber-500/15 text-amber-300 border border-amber-500/20';
+    case 'paid':
+      return 'bg-blue-500/15 text-blue-300 border border-blue-500/20';
+    case 'completed':
+      return 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/20';
+    case 'expired':
+      return 'bg-rose-500/15 text-rose-300 border border-rose-500/20';
+    default:
+      return 'bg-slate-500/15 text-slate-300 border border-slate-500/20';
+  }
+}
+
+function getReceivingAddress(item: OrderItem) {
+  return (
+    item.receivingAddress ||
+    item.deliveryAddress ||
+    item.shippingAddress ||
+    item.address ||
+    '-'
+  );
+}
+
+function getShippingNo(item: OrderItem) {
+  return (
+    item.shippingNo ||
+    item.expressNo ||
+    item.trackingNo ||
+    item.logisticsNo ||
+    item.courierNo ||
+    ''
+  );
+}
+
+async function fetchJson(url: string, options?: RequestInit) {
+  const res = await fetch(url, {
+    cache: 'no-store',
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(options?.headers || {}),
+    },
+  });
+
+  const contentType = res.headers.get('content-type') || '';
+  const raw = await res.text();
+
+  let parsed: any = null;
+  if (raw) {
+    if (contentType.includes('application/json')) {
+      try {
+        parsed = JSON.parse(raw);
+      } catch {
+        throw new Error(`接口返回的 JSON 无法解析：${raw.slice(0, 120)}`);
+      }
+    } else {
+      throw new Error(`接口未返回 JSON：${raw.slice(0, 120)}`);
+    }
+  }
+
+  if (!res.ok) {
+    const msg = parsed?.message || parsed?.error || `请求失败（${res.status}）`;
+    throw new Error(msg);
+  }
+
+  return parsed as ApiListResponse;
+}
 
 export default function AdminOrdersPage() {
   const [orders, setOrders] = useState<OrderItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [query, setQuery] = useState("");
-  const [status, setStatus] = useState("all");
-  const [error, setError] = useState("");
+  const [pageError, setPageError] = useState('');
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [updatingId, setUpdatingId] = useState<string | number | null>(null);
+  const [shippingInputs, setShippingInputs] = useState<Record<string, string>>({});
+  const [copiedId, setCopiedId] = useState<string | number | null>(null);
 
-  const [editingOrder, setEditingOrder] = useState<OrderItem | null>(null);
-  const [viewingOrder, setViewingOrder] = useState<OrderItem | null>(null);
+  const loadOrders = async () => {
+    setLoading(true);
+    setPageError('');
 
-  const [editForm, setEditForm] = useState<EditForm>({
-    orderStatus: "pending",
-    shippingInfo: "",
-    remark: "",
-    payAddress: "",
-    chainType: "TRC20",
-  });
-
-  const loadOrders = async (keyword = "", statusFilter = "all") => {
     try {
-      setLoading(true);
-      setError("");
+      const data = await fetchJson('/api/admin/orders');
 
-      const res = await fetch(
-        `/api/admin/orders?query=${encodeURIComponent(keyword)}&status=${encodeURIComponent(statusFilter)}`
-      );
-      const data = await res.json();
-
-      if (!data.success) {
-        throw new Error(data.message || "加载订单失败");
+      let list: OrderItem[] = [];
+      if (Array.isArray(data)) {
+        list = data;
+      } else if (data?.data && Array.isArray(data.data)) {
+        list = data.data;
+      } else if (data?.orders && Array.isArray(data.orders)) {
+        list = data.orders;
       }
 
-      setOrders(data.data || []);
+      setOrders(list);
     } catch (err: any) {
-      setError(err.message || "加载订单失败");
+      setPageError(err?.message || '加载订单失败');
+      setOrders([]);
     } finally {
       setLoading(false);
     }
@@ -75,697 +205,327 @@ export default function AdminOrdersPage() {
     loadOrders();
   }, []);
 
+  const filteredOrders = useMemo(() => {
+    const keyword = search.trim().toLowerCase();
+
+    return orders.filter((item) => {
+      const itemStatus = normalizeStatus(item.status ?? item.orderStatus);
+      const matchStatus = statusFilter === 'all' || itemStatus === statusFilter;
+
+      if (!keyword) return matchStatus;
+
+      const fields = [
+        item.orderNo,
+        item.orderNumber,
+        item.walletAddress,
+        item.nickname,
+        item.userNickname,
+        item.productName,
+        item.productTitle,
+        item.receivingAddress,
+        item.deliveryAddress,
+        item.shippingAddress,
+        item.address,
+        item.shippingNo,
+        item.expressNo,
+        item.trackingNo,
+        item.logisticsNo,
+        item.courierNo,
+        item.paymentAddress,
+        item.txHash,
+        item.hash,
+        item.chain,
+        item.network,
+        item.status,
+        item.orderStatus,
+      ]
+        .map(safeString)
+        .join(' ')
+        .toLowerCase();
+
+      return matchStatus && fields.includes(keyword);
+    });
+  }, [orders, search, statusFilter]);
+
+  const displayOrders: OrderItem[] = useMemo(() => {
+    if (loading) return [];
+    if (filteredOrders.length > 0) return filteredOrders;
+
+    // 演示订单案例：当真实数据为空时显示，方便你看效果
+    return [
+      {
+        id: 'demo-001',
+        orderNo: 'DEMO-20260926-0001',
+        walletAddress: '0x8a3f...c91d',
+        nickname: 'Tony',
+        productName: '示例商品 / Demo Product',
+        price: 99.99,
+        chain: 'BSC',
+        status: 'paid',
+        createdAt: new Date().toISOString(),
+        paidAt: new Date().toISOString(),
+        receivingAddress: '上海市浦东新区世纪大道 88 号 12 楼 Tony 收',
+        shippingNo: '',
+      },
+    ];
+  }, [filteredOrders, loading]);
+
   const stats = useMemo(() => {
-    return {
-      total: orders.length,
-      pending: orders.filter((o) => o.orderStatus === "pending").length,
-      paid: orders.filter((o) => o.orderStatus === "paid").length,
-      completed: orders.filter((o) => o.orderStatus === "completed").length,
-      expired: orders.filter((o) => o.orderStatus === "expired").length,
-    };
+    const total = orders.length;
+    const pending = orders.filter((o) => normalizeStatus(o.status ?? o.orderStatus) === 'pending').length;
+    const paid = orders.filter((o) => normalizeStatus(o.status ?? o.orderStatus) === 'paid').length;
+    const completed = orders.filter((o) => normalizeStatus(o.status ?? o.orderStatus) === 'completed').length;
+    const expired = orders.filter((o) => normalizeStatus(o.status ?? o.orderStatus) === 'expired').length;
+
+    return { total, pending, paid, completed, expired };
   }, [orders]);
 
-  const handleSearch = () => {
-    loadOrders(query.trim(), status);
-  };
-
-  const handleReset = () => {
-    setQuery("");
-    setStatus("all");
-    loadOrders("", "all");
-  };
-
-  const updateOrder = async (id: string, payload: any) => {
-    const res = await fetch(`/api/admin/orders/${id}`, {
-      method: "PATCH",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(payload),
-    });
-
-    const data = await res.json();
-
-    if (!data.success) {
-      throw new Error(data.message || "操作失败");
-    }
-
-    return data.data as OrderItem;
-  };
-
-  const openEdit = (order: OrderItem) => {
-    setEditingOrder(order);
-    setEditForm({
-      orderStatus: order.orderStatus,
-      shippingInfo: order.shippingInfo || "",
-      remark: order.remark || "",
-      payAddress: order.payAddress || "",
-      chainType: order.chainType || "TRC20",
-    });
-  };
-
-  const openView = (order: OrderItem) => {
-    setViewingOrder(order);
-  };
-
-  const saveEdit = async () => {
-    if (!editingOrder) return;
+  const copyReceivingAddress = async (id: string | number, address: string) => {
+    if (!address || address === '-') return;
 
     try {
-      const updated = await updateOrder(editingOrder.id, {
-        orderStatus: editForm.orderStatus,
-        shippingInfo: editForm.shippingInfo,
-        remark: editForm.remark,
-        payAddress: editForm.payAddress,
-        chainType: editForm.chainType,
-      });
-
-      setOrders((prev) =>
-        prev.map((item) => (item.id === editingOrder.id ? updated : item))
-      );
-
-      setEditingOrder(null);
-      alert("订单已更新");
-    } catch (err: any) {
-      alert(err.message || "更新失败");
+      await navigator.clipboard.writeText(address);
+      setCopiedId(id);
+      setTimeout(() => setCopiedId((cur) => (cur === id ? null : cur)), 1200);
+    } catch {
+      setPageError('复制失败，请检查浏览器权限');
     }
   };
 
-  const markPaid = async (order: OrderItem) => {
-    try {
-      const updated = await updateOrder(order.id, {
-        orderStatus: "paid",
-        paidAt: new Date().toISOString(),
-      });
+  const updateShippingNo = async (id: string | number) => {
+    const key = String(id);
+    const shippingNo = (shippingInputs[key] ?? '').trim();
 
-      setOrders((prev) => prev.map((item) => (item.id === order.id ? updated : item)));
-      alert("已标记为已支付");
-    } catch (err: any) {
-      alert(err.message || "操作失败");
+    if (!shippingNo) {
+      return;
     }
-  };
 
-  const markCompleted = async (order: OrderItem) => {
-    try {
-      const updated = await updateOrder(order.id, {
-        orderStatus: "completed",
-        completedAt: new Date().toISOString(),
-      });
-
-      setOrders((prev) => prev.map((item) => (item.id === order.id ? updated : item)));
-      alert("已标记为已完成");
-    } catch (err: any) {
-      alert(err.message || "操作失败");
-    }
-  };
-
-  const markExpired = async (order: OrderItem) => {
-    if (!window.confirm("确定要把这个订单标记为已超时吗？")) return;
+    setUpdatingId(id);
+    setPageError('');
 
     try {
-      const updated = await updateOrder(order.id, {
-        orderStatus: "expired",
+      const result = await fetchJson(`/api/admin/orders/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          shippingNo,
+          // 如果你希望点击“已发货”时顺便改状态，可以保留这一行
+          // orderStatus: 'completed',
+        }),
       });
 
-      setOrders((prev) => prev.map((item) => (item.id === order.id ? updated : item)));
-      alert("已标记为已超时");
+      if ((result as any)?.success === false) {
+        throw new Error((result as any)?.message || (result as any)?.error || '保存失败');
+      }
+
+      setShippingInputs((prev) => ({
+        ...prev,
+        [key]: '',
+      }));
+
+      await loadOrders();
     } catch (err: any) {
-      alert(err.message || "操作失败");
+      setPageError(err?.message || '保存快递单号失败');
+    } finally {
+      setUpdatingId(null);
     }
   };
 
   return (
-    <div style={{ color: "#fff" }}>
-      <div style={{ marginBottom: "20px" }}>
-        <h1 style={{ fontSize: "28px", marginBottom: "8px" }}>订单管理</h1>
-        <p style={{ color: "#94a3b8" }}>
-          这里可以查看订单、搜索订单、修改状态、查看付款地址、标记已支付或已完成。
-        </p>
-      </div>
+    <div className="min-h-screen bg-[#070d1f] text-white">
+      <main className="p-6">
+        <div className="max-w-[1600px]">
+          <div className="mb-6">
+            <h1 className="text-2xl font-bold">订单管理</h1>
+            <p className="mt-2 text-sm text-white/70">
+              这里可以查看订单、搜索订单、修改状态、查看收货地址、填写快递单号。
+            </p>
+          </div>
 
-      {/* 统计卡片 */}
-      <div style={statsGrid}>
-        <StatCard title="订单总数" value={stats.total} />
-        <StatCard title="待支付" value={stats.pending} />
-        <StatCard title="已支付" value={stats.paid} />
-        <StatCard title="已完成" value={stats.completed} />
-        <StatCard title="已超时" value={stats.expired} />
-      </div>
+          {/* 统计卡片 */}
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-5 mb-5">
+            {[
+              { label: '订单总数', value: stats.total },
+              { label: '待支付', value: stats.pending },
+              { label: '已支付', value: stats.paid },
+              { label: '已完成', value: stats.completed },
+              { label: '已超时', value: stats.expired },
+            ].map((card) => (
+              <div key={card.label} className="rounded-xl border border-blue-500/20 bg-[#10183a] p-5">
+                <div className="text-sm text-white/70">{card.label}</div>
+                <div className="mt-4 text-3xl font-semibold">{card.value}</div>
+              </div>
+            ))}
+          </div>
 
-      {/* 搜索栏 */}
-      <div style={searchBar}>
-        <input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="搜索订单号 / 钱包地址 / 昵称 / 商品名 / 收款地址"
-          style={searchInputStyle}
-        />
-
-        <select
-          value={status}
-          onChange={(e) => setStatus(e.target.value)}
-          style={selectStyle}
-        >
-          <option value="all">全部状态</option>
-          <option value="pending">待支付</option>
-          <option value="paid">已支付</option>
-          <option value="completed">已完成</option>
-          <option value="expired">已超时</option>
-          <option value="cancelled">已取消</option>
-        </select>
-
-        <button onClick={handleSearch} style={primaryBtnStyle}>
-          搜索
-        </button>
-        <button onClick={handleReset} style={secondaryBtnStyle}>
-          重置
-        </button>
-      </div>
-
-      {/* 错误提示 */}
-      {error ? <div style={errorBoxStyle}>{error}</div> : null}
-
-      {/* 订单表格 */}
-      <div style={tableWrapper}>
-        <table style={tableStyle}>
-          <thead style={{ background: "#182347" }}>
-            <tr>
-              <th style={thStyle}>订单号</th>
-              <th style={thStyle}>钱包地址</th>
-              <th style={thStyle}>用户昵称</th>
-              <th style={thStyle}>商品名称</th>
-              <th style={thStyle}>价格</th>
-              <th style={thStyle}>币种</th>
-              <th style={thStyle}>链</th>
-              <th style={thStyle}>状态</th>
-              <th style={thStyle}>创建时间</th>
-              <th style={thStyle}>支付时间</th>
-              <th style={thStyle}>完成时间</th>
-              <th style={thStyle}>操作</th>
-            </tr>
-          </thead>
-          <tbody>
-            {loading ? (
-              <tr>
-                <td style={tdStyle} colSpan={12}>
-                  加载中...
-                </td>
-              </tr>
-            ) : orders.length === 0 ? (
-              <tr>
-                <td style={tdStyle} colSpan={12}>
-                  暂无订单数据
-                </td>
-              </tr>
-            ) : (
-              orders.map((order) => (
-                <tr key={order.id} style={trStyle}>
-                  <td style={tdStyle}>{order.orderNo}</td>
-                  <td style={tdStyle}>{order.walletAddress}</td>
-                  <td style={tdStyle}>{order.nickname || "-"}</td>
-                  <td style={tdStyle}>{order.productName}</td>
-                  <td style={tdStyle}>{order.productPrice} USDT</td>
-                  <td style={tdStyle}>{order.coinType}</td>
-                  <td style={tdStyle}>{order.chainType}</td>
-                  <td style={tdStyle}>
-                    <span style={{ ...statusTagStyle, background: getStatusColor(order.orderStatus) }}>
-                      {getStatusLabel(order.orderStatus)}
-                    </span>
-                  </td>
-                  <td style={tdStyle}>{formatDate(order.createdAt)}</td>
-                  <td style={tdStyle}>{formatDate(order.paidAt)}</td>
-                  <td style={tdStyle}>{formatDate(order.completedAt)}</td>
-                  <td style={tdStyle}>
-                    <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
-                      <button style={actionBtnStyle} onClick={() => openView(order)}>
-                        查看
-                      </button>
-                      <button style={actionBtnStyle} onClick={() => openEdit(order)}>
-                        编辑
-                      </button>
-                      <button
-                        style={{ ...actionBtnStyle, background: "#16a34a" }}
-                        onClick={() => markPaid(order)}
-                      >
-                        标记已支付
-                      </button>
-                      <button
-                        style={{ ...actionBtnStyle, background: "#1d4ed8" }}
-                        onClick={() => markCompleted(order)}
-                      >
-                        标记已完成
-                      </button>
-                      <button
-                        style={{ ...actionBtnStyle, background: "#dc2626" }}
-                        onClick={() => markExpired(order)}
-                      >
-                        标记已超时
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
-
-      {/* 详情弹窗 */}
-      {viewingOrder ? (
-        <Modal title="订单详情" onClose={() => setViewingOrder(null)}>
-          <DetailList
-            items={[
-              ["订单号", viewingOrder.orderNo],
-              ["钱包地址", viewingOrder.walletAddress],
-              ["用户昵称", viewingOrder.nickname || "-"],
-              ["商品名称", viewingOrder.productName],
-              ["商品价格", `${viewingOrder.productPrice} USDT`],
-              ["支付币种", viewingOrder.coinType],
-              ["支付链", viewingOrder.chainType],
-              ["收款地址", viewingOrder.payAddress],
-              ["订单状态", getStatusLabel(viewingOrder.orderStatus)],
-              ["创建时间", formatDate(viewingOrder.createdAt)],
-              ["支付时间", formatDate(viewingOrder.paidAt)],
-              ["完成时间", formatDate(viewingOrder.completedAt)],
-              ["超时时间", formatDate(viewingOrder.timeoutAt)],
-              ["收货人地址联系信息", viewingOrder.shippingInfo || "-"],
-              ["备注", viewingOrder.remark || "-"],
-            ]}
-          />
-        </Modal>
-      ) : null}
-
-      {/* 编辑弹窗 */}
-      {editingOrder ? (
-        <Modal title="编辑订单" onClose={() => setEditingOrder(null)}>
-          <FormGrid>
-            <Field
-              label="订单状态"
-              value={editForm.orderStatus}
-              onChange={(v) => setEditForm((p) => ({ ...p, orderStatus: v }))}
-              as="select"
-              options={[
-                ["pending", "待支付"],
-                ["paid", "已支付"],
-                ["completed", "已完成"],
-                ["expired", "已超时"],
-                ["cancelled", "已取消"],
-              ]}
+          {/* 搜索区 */}
+          <div className="flex flex-col gap-3 rounded-xl border border-white/10 bg-[#0d1431] p-3 md:flex-row md:items-center">
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="搜索订单号 / 钱包地址 / 昵称 / 商品名 / 收货地址 / 快递单号"
+              className="h-11 flex-1 rounded-lg border border-white/10 bg-[#11193d] px-4 text-sm outline-none placeholder:text-white/35 focus:border-blue-500/60"
             />
-            <Field
-              label="支付链"
-              value={editForm.chainType}
-              onChange={(v) => setEditForm((p) => ({ ...p, chainType: v }))}
-            />
-            <Field
-              label="收款地址"
-              value={editForm.payAddress}
-              onChange={(v) => setEditForm((p) => ({ ...p, payAddress: v }))}
-            />
-            <TextAreaField
-              label="收货人地址联系信息"
-              value={editForm.shippingInfo}
-              onChange={(v) => setEditForm((p) => ({ ...p, shippingInfo: v }))}
-            />
-            <TextAreaField
-              label="备注"
-              value={editForm.remark}
-              onChange={(v) => setEditForm((p) => ({ ...p, remark: v }))}
-            />
-          </FormGrid>
 
-          <div style={modalBtnRowStyle}>
-            <button onClick={saveEdit} style={primaryBtnStyle}>
-              保存
-            </button>
-            <button
-              onClick={() => setEditingOrder(null)}
-              style={secondaryBtnStyle}
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="h-11 w-full rounded-lg border border-white/10 bg-[#11193d] px-4 text-sm outline-none md:w-40"
             >
-              取消
+              <option value="all">全部状态</option>
+              <option value="pending">待支付</option>
+              <option value="paid">已支付</option>
+              <option value="completed">已完成</option>
+              <option value="expired">已超时</option>
+            </select>
+
+            <button
+              onClick={loadOrders}
+              className="h-11 rounded-lg bg-blue-600 px-5 text-sm font-medium hover:bg-blue-500"
+            >
+              搜索
+            </button>
+
+            <button
+              onClick={() => {
+                setSearch('');
+                setStatusFilter('all');
+                loadOrders();
+              }}
+              className="h-11 rounded-lg bg-slate-600 px-5 text-sm font-medium hover:bg-slate-500"
+            >
+              重置
             </button>
           </div>
-        </Modal>
-      ) : null}
-    </div>
-  );
-}
 
-function StatCard({ title, value }: { title: string; value: number }) {
-  return (
-    <div style={statCardStyle}>
-      <div style={{ color: "#94a3b8", fontSize: "14px" }}>{title}</div>
-      <div style={{ marginTop: "10px", fontSize: "28px", fontWeight: 700 }}>
-        {value}
-      </div>
-    </div>
-  );
-}
+          {/* 错误提示 */}
+          {pageError && (
+            <div className="mt-4 rounded-lg border border-red-500/30 bg-red-950/80 px-4 py-3 text-sm text-red-100">
+              {pageError}
+            </div>
+          )}
 
-function Modal({
-  title,
-  children,
-  onClose,
-}: {
-  title: string;
-  children: React.ReactNode;
-  onClose: () => void;
-}) {
-  return (
-    <div style={overlayStyle}>
-      <div style={modalStyle}>
-        <div style={modalHeaderStyle}>
-          <h2 style={{ margin: 0, fontSize: "20px" }}>{title}</h2>
-          <button onClick={onClose} style={closeBtnStyle}>
-            ×
-          </button>
+          {/* 表格 */}
+          <div className="mt-4 overflow-hidden rounded-xl border border-blue-500/20 bg-[#0d1431]">
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-left text-sm">
+                <thead className="border-b border-white/10 bg-white/5 text-white/80">
+                  <tr>
+                    <th className="px-4 py-4 font-medium">订单号</th>
+                    <th className="px-4 py-4 font-medium">钱包地址</th>
+                    <th className="px-4 py-4 font-medium">用户昵称</th>
+                    <th className="px-4 py-4 font-medium">商品名称</th>
+                    <th className="px-4 py-4 font-medium">价格</th>
+                    <th className="px-4 py-4 font-medium">链</th>
+                    <th className="px-4 py-4 font-medium">状态</th>
+                    <th className="px-4 py-4 font-medium">创建时间</th>
+                    <th className="px-4 py-4 font-medium">支付时间</th>
+                    <th className="px-4 py-4 font-medium">收货地址</th>
+                    <th className="px-4 py-4 font-medium">快递单号</th>
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {loading ? (
+                    <tr>
+                      <td className="px-4 py-8 text-white/60" colSpan={11}>
+                        正在加载订单...
+                      </td>
+                    </tr>
+                  ) : displayOrders.length === 0 ? (
+                    <tr>
+                      <td className="px-4 py-8 text-white/60" colSpan={11}>
+                        暂无订单数据
+                      </td>
+                    </tr>
+                  ) : (
+                    displayOrders.map((item) => {
+                      const id = item.id;
+                      const key = String(id);
+                      const status = normalizeStatus(item.status ?? item.orderStatus);
+                      const orderNo = item.orderNo || item.orderNumber || '-';
+                      const wallet = item.walletAddress || '-';
+                      const nickname = item.nickname || item.userNickname || '-';
+                      const product = item.productName || item.productTitle || '-';
+                      const price = formatMoney(item.price ?? item.amount);
+                      const chain = item.chain || item.network || '-';
+                      const createdAt = formatDate(item.createdAt);
+                      const paidAt = formatDate(item.paidAt);
+                      const receivingAddress = getReceivingAddress(item);
+                      const shippingNo = getShippingNo(item);
+                      const currentInput = shippingInputs[key] ?? '';
+
+                      const canShip = currentInput.trim().length > 0;
+
+                      return (
+                        <tr key={key} className="border-b border-white/5 hover:bg-white/3 align-top">
+                          <td className="px-4 py-4 whitespace-nowrap">{orderNo}</td>
+                          <td className="px-4 py-4 whitespace-nowrap max-w-[220px] truncate">{wallet}</td>
+                          <td className="px-4 py-4 whitespace-nowrap">{nickname}</td>
+                          <td className="px-4 py-4 whitespace-nowrap">{product}</td>
+                          <td className="px-4 py-4 whitespace-nowrap">{price}</td>
+                          <td className="px-4 py-4 whitespace-nowrap">{chain}</td>
+                          <td className="px-4 py-4 whitespace-nowrap">
+                            <span className={`inline-flex rounded-full px-3 py-1 text-xs ${statusClass(status)}`}>
+                              {statusText(status)}
+                            </span>
+                          </td>
+                          <td className="px-4 py-4 whitespace-nowrap">{createdAt}</td>
+                          <td className="px-4 py-4 whitespace-nowrap">{paidAt}</td>
+
+                          <td className="px-4 py-4 whitespace-nowrap max-w-[320px]">
+                            <div className="flex items-start gap-2">
+                              <span className="block break-all leading-6">{receivingAddress}</span>
+                              <button
+                                onClick={() => copyReceivingAddress(id, receivingAddress)}
+                                disabled={!receivingAddress || receivingAddress === '-'}
+                                className="shrink-0 rounded-md border border-white/10 bg-white/5 px-2 py-1 text-xs text-white/80 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
+                              >
+                                {copiedId === id ? '已复制' : '复制'}
+                              </button>
+                            </div>
+                          </td>
+
+                          <td className="px-4 py-4 whitespace-nowrap min-w-[300px]">
+                            <div className="flex items-center gap-2">
+                              <input
+                                value={currentInput}
+                                onChange={(e) =>
+                                  setShippingInputs((prev) => ({
+                                    ...prev,
+                                    [key]: e.target.value,
+                                  }))
+                                }
+                                placeholder="输入快递单号"
+                                className="h-10 w-full rounded-lg border border-white/10 bg-[#11193d] px-3 text-sm outline-none placeholder:text-white/35 focus:border-blue-500/60"
+                              />
+                              <button
+                                disabled={!canShip || updatingId === id}
+                                onClick={() => updateShippingNo(id)}
+                                className={`shrink-0 rounded-md px-3 py-2 text-xs font-medium transition
+                                  ${
+                                    canShip && updatingId !== id
+                                      ? 'bg-emerald-600 text-white hover:bg-emerald-500'
+                                      : 'bg-slate-600 text-white/50 cursor-not-allowed'
+                                  }`}
+                              >
+                                {updatingId === id ? '保存中...' : '已发货'}
+                              </button>
+                            </div>
+
+                            <div className="mt-2 text-xs text-white/45">
+                              当前单号：{shippingNo || '未填写'}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
-        <div>{children}</div>
-      </div>
+      </main>
     </div>
   );
 }
-
-function FormGrid({ children }: { children: React.ReactNode }) {
-  return (
-    <div style={formGridStyle}>
-      {children}
-    </div>
-  );
-}
-
-function Field({
-  label,
-  value,
-  onChange,
-  as = "input",
-  options = [],
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  as?: "input" | "select";
-  options?: Array<[string, string]>;
-}) {
-  return (
-    <div>
-      <label style={labelStyle}>{label}</label>
-      {as === "select" ? (
-        <select
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          style={inputStyle}
-        >
-          {options.map(([val, text]) => (
-            <option key={val} value={val}>
-              {text}
-            </option>
-          ))}
-        </select>
-      ) : (
-        <input
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          style={inputStyle}
-        />
-      )}
-    </div>
-  );
-}
-
-function TextAreaField({
-  label,
-  value,
-  onChange,
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-}) {
-  return (
-    <div style={{ gridColumn: "1 / -1" }}>
-      <label style={labelStyle}>{label}</label>
-      <textarea
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        rows={4}
-        style={textAreaStyle}
-      />
-    </div>
-  );
-}
-
-function DetailList({ items }: { items: Array<[string, string]> }) {
-  return (
-    <div style={{ display: "grid", gap: "10px" }}>
-      {items.map(([k, v]) => (
-        <div
-          key={k}
-          style={{
-            display: "grid",
-            gridTemplateColumns: "180px 1fr",
-            gap: "12px",
-            padding: "10px 12px",
-            background: "#0f172a",
-            border: "1px solid #22305f",
-            borderRadius: "8px",
-          }}
-        >
-          <div style={{ color: "#94a3b8" }}>{k}</div>
-          <div style={{ color: "#fff", wordBreak: "break-all" }}>{v}</div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function formatDate(value: string) {
-  if (!value) return "-";
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return "-";
-  return d.toLocaleString();
-}
-
-function getStatusLabel(status: string) {
-  const map: Record<string, string> = {
-    pending: "待支付",
-    paid: "已支付",
-    completed: "已完成",
-    expired: "已超时",
-    cancelled: "已取消",
-  };
-  return map[status] || status;
-}
-
-function getStatusColor(status: string) {
-  const map: Record<string, string> = {
-    pending: "#f59e0b",
-    paid: "#16a34a",
-    completed: "#2563eb",
-    expired: "#dc2626",
-    cancelled: "#64748b",
-  };
-  return map[status] || "#334155";
-}
-
-const statsGrid: React.CSSProperties = {
-  display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-  gap: "16px",
-  marginBottom: "20px",
-};
-
-const statCardStyle: React.CSSProperties = {
-  background: "#111833",
-  border: "1px solid #22305f",
-  borderRadius: "12px",
-  padding: "18px",
-};
-
-const searchBar: React.CSSProperties = {
-  display: "flex",
-  gap: "10px",
-  flexWrap: "wrap",
-  marginBottom: "16px",
-};
-
-const searchInputStyle: React.CSSProperties = {
-  flex: "1 1 320px",
-  padding: "12px 14px",
-  borderRadius: "8px",
-  border: "1px solid #334155",
-  background: "#0f172a",
-  color: "#fff",
-  outline: "none",
-  // 修正: 已删除此处错误拼写的 boxXsizing
-};
-
-const selectStyle: React.CSSProperties = {
-  padding: "12px 14px",
-  borderRadius: "8px",
-  border: "1px solid #334155",
-  background: "#0f172a",
-  color: "#fff",
-  outline: "none",
-};
-
-const primaryBtnStyle: React.CSSProperties = {
-  padding: "12px 18px",
-  background: "#2563eb",
-  color: "#fff",
-  border: "none",
-  borderRadius: "8px",
-  cursor: "pointer",
-};
-
-const secondaryBtnStyle: React.CSSProperties = {
-  padding: "12px 18px",
-  background: "#475569",
-  color: "#fff",
-  border: "none",
-  borderRadius: "8px",
-  cursor: "pointer",
-};
-
-const errorBoxStyle: React.CSSProperties = {
-  marginBottom: "16px",
-  padding: "12px 14px",
-  borderRadius: "8px",
-  background: "#7f1d1d",
-  color: "#fecaca",
-};
-
-const tableWrapper: React.CSSProperties = {
-  overflowX: "auto",
-  background: "#111833",
-  border: "1px solid #22305f",
-  borderRadius: "12px",
-};
-
-const tableStyle: React.CSSProperties = {
-  width: "100%",
-  borderCollapse: "collapse",
-  minWidth: "1700px",
-};
-
-const thStyle: React.CSSProperties = {
-  padding: "14px",
-  textAlign: "left",
-  color: "#c7d2fe",
-  fontWeight: "bold",
-  whiteSpace: "nowrap",
-};
-
-const tdStyle: React.CSSProperties = {
-  padding: "14px",
-  color: "#fff",
-  borderTop: "1px solid #22305f",
-  verticalAlign: "top",
-};
-
-const trStyle: React.CSSProperties = {
-  borderTop: "1px solid #22305f",
-};
-
-const actionBtnStyle: React.CSSProperties = {
-  padding: "8px 12px",
-  background: "#334155",
-  color: "#fff",
-  border: "none",
-  borderRadius: "6px",
-  cursor: "pointer",
-};
-
-const statusTagStyle: React.CSSProperties = {
-  display: "inline-block",
-  padding: "6px 10px",
-  borderRadius: "999px",
-  color: "#fff",
-  fontSize: "12px",
-};
-
-const overlayStyle: React.CSSProperties = {
-  position: "fixed",
-  inset: 0,
-  background: "rgba(0,0,0,0.6)",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  padding: "20px",
-  zIndex: 1000,
-};
-
-const modalStyle: React.CSSProperties = {
-  width: "100%",
-  maxWidth: "900px",
-  maxHeight: "90vh",
-  overflowY: "auto",
-  background: "#111833",
-  border: "1px solid #22305f",
-  borderRadius: "14px",
-  padding: "20px",
-};
-
-const modalHeaderStyle: React.CSSProperties = {
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "space-between",
-  marginBottom: "18px",
-};
-
-const closeBtnStyle: React.CSSProperties = {
-  width: "36px",
-  height: "36px",
-  borderRadius: "999px",
-  border: "none",
-  background: "#334155",
-  color: "#fff",
-  fontSize: "22px",
-  cursor: "pointer",
-  lineHeight: 1,
-};
-
-const formGridStyle: React.CSSProperties = {
-  display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
-  gap: "16px",
-};
-
-const labelStyle: React.CSSProperties = {
-  display: "block",
-  marginBottom: "8px",
-  color: "#c7d2fe",
-  fontSize: "14px",
-  fontWeight: 600,
-};
-
-const inputStyle: React.CSSProperties = {
-  width: "100%",
-  padding: "12px",
-  borderRadius: "8px",
-  border: "1px solid #334155",
-  background: "#0f172a",
-  color: "#fff",
-  outline: "none",
-  boxSizing: "border-box", // 修正: 已删除此处错误拼写的 boxXsizing
-};
-
-const textAreaStyle: React.CSSProperties = {
-  width: "100%",
-  padding: "12px",
-  borderRadius: "8px",
-  border: "1px solid #334155",
-  background: "#0f172a",
-  color: "#fff",
-  outline: "none",
-  boxSizing: "border-box", // 修正: 已删除此处错误拼写的 boxXsizing
-  resize: "vertical",
-};
-
-const modalBtnRowStyle: React.CSSProperties = {
-  display: "flex",
-  gap: "12px",
-  justifyContent: "flex-end",
-  marginTop: "20px",
-  flexWrap: "wrap",
-};
